@@ -12,6 +12,7 @@ from src.services.database_service import DatabaseService
 from src.utils.file_utils import FileUtils
 from src.utils.logger_config import get_logger, log_exception
 from src.utils.error_window import show_error
+from src.components.settings_window import open_settings_window
 
 logger = get_logger("app")
 
@@ -74,6 +75,23 @@ class GeoOfficeSyncService:
             logger.error("Ошибка сохранения настроек")
 
     @log_exception
+    def _update_settings(self, server_path: str, database_path: str):
+        """
+        Обновление настроек из окна настроек.
+        
+        Args:
+            server_path: Путь к файловому серверу
+            database_path: Путь к базе данных
+        """
+        self.settings.paths.file_server = server_path
+        self.settings.paths.database_path = database_path
+        self._save_settings()
+        
+        # Переинициализируем сервис базы данных с новым путем
+        self.database_service = DatabaseService(
+            Path(self.settings.paths.file_server) / self.settings.paths.database_path)
+
+    @log_exception
     def _get_icon(self) -> Image:
         try:
             return Image.open("src/assets/icon.png")
@@ -87,7 +105,7 @@ class GeoOfficeSyncService:
             # MenuItem('Запустить мониторинг', self.start_action, enabled=not self.is_running),
             # MenuItem('Остановить мониторинг', self.stop_action, enabled=self.is_running),
             # MenuItem('Синхронизировать', self.synchronization),
-            # MenuItem('Настройки', self.settings_action),
+            MenuItem('Настройки', self.settings_action),
             MenuItem('Выход', self.exit_action),
         )
 
@@ -95,6 +113,18 @@ class GeoOfficeSyncService:
     def _update_menu(self):
         self.icon.menu = Menu(*self._create_menu())
         self.icon.update_menu()
+
+    def settings_action(self, icon, menu_item):
+        """Открывает окно настроек."""
+        try:
+            open_settings_window(
+                server_path=self.settings.paths.file_server,
+                database_path=self.settings.paths.database_path,
+                on_save=self._update_settings
+            )
+        except Exception as e:
+            logger.exception("Ошибка при открытии окна настроек")
+            show_error(f"Ошибка при открытии окна настроек:\n{traceback.format_exc()}")
 
     def exit_action(self, icon, menu_item):
         try:
