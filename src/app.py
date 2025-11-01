@@ -9,6 +9,7 @@ from PIL import Image
 from src import APP_NAME, SETTINGS_PATH
 from src.models.settings_model import Settings
 from src.services.database_service import DatabaseService
+from src.services.file_monitor_service import FileMonitorService
 from src.utils.file_utils import FileUtils
 from src.utils.logger_config import get_logger, log_exception
 from src.utils.error_window import show_error
@@ -29,8 +30,8 @@ class GeoOfficeSyncService:
 
     def __init__(self):
         self.is_running = False
-        # self._sync_thread = None
-        # self._stop_event = threading.Event()
+        self._sync_thread = None
+        self._stop_event = threading.Event()
 
         # Загружаем сохранённые настройки (если есть)
         self.settings = Settings(data=None)
@@ -39,8 +40,10 @@ class GeoOfficeSyncService:
         # Инициализация базы данных
         self.database_service = DatabaseService(
             Path(self.settings.paths.file_server) / self.settings.paths.database_path)
+        self.database_service.connection()
 
-        # self._init_observer()
+        # Инициализация сервиса мониторинга файлов
+        self.file_monitor_service = FileMonitorService(self.database_service, self.settings.paths.file_server)
 
         # Создаем иконку
         self.icon = Icon(
@@ -102,9 +105,9 @@ class GeoOfficeSyncService:
     @log_exception
     def _create_menu(self):
         return (
-            # MenuItem('Запустить мониторинг', self.start_action, enabled=not self.is_running),
-            # MenuItem('Остановить мониторинг', self.stop_action, enabled=self.is_running),
-            # MenuItem('Синхронизировать', self.synchronization),
+            MenuItem('Запустить мониторинг', self.start_action, enabled=not self.is_running),
+            MenuItem('Остановить мониторинг', self.stop_action, enabled=self.is_running),
+            MenuItem('Синхронизировать', self.synchronization),
             MenuItem('Настройки', self.settings_action),
             MenuItem('Выход', self.exit_action),
         )
@@ -113,6 +116,62 @@ class GeoOfficeSyncService:
     def _update_menu(self):
         self.icon.menu = Menu(*self._create_menu())
         self.icon.update_menu()
+
+    @log_exception
+    def _update_title(self):
+        """Обновление заголовка иконки в зависимости от состояния мониторинга"""
+        if self.is_running:
+            self.icon.title = f'{APP_NAME} Мониторинг запущен'
+        else:
+            self.icon.title = f'{APP_NAME} Мониторинг остановлен'
+
+    def start_action(self, icon, menu_item):
+        """Запуск мониторинга файлов"""
+        try:
+            if not self.is_running:
+                logger.info("Запуск мониторинга файлов...")
+                if self.file_monitor_service.start_monitoring():
+                    self.is_running = True
+                    self._update_title()
+                    self._update_menu()
+                    logger.info("Мониторинг файлов успешно запущен")
+                else:
+                    logger.error("Ошибка при запуске мониторинга файлов")
+                    show_error("Ошибка при запуске мониторинга файлов")
+            else:
+                logger.info("Мониторинг файлов уже запущен")
+        except Exception as e:
+            logger.exception(f"Ошибка при запуске мониторинга файлов:\n{traceback.format_exc()}")
+            show_error(f"Ошибка при запуске мониторинга файлов:\n{traceback.format_exc()}")
+
+    def stop_action(self, icon, menu_item):
+        """Остановка мониторинга файлов"""
+        try:
+            if self.is_running:
+                logger.info("Остановка мониторинга файлов...")
+                if self.file_monitor_service.stop_monitoring():
+                    self.is_running = False
+                    self._update_title()
+                    self._update_menu()
+                    logger.info("Мониторинг файлов успешно остановлен")
+                else:
+                    logger.error("Ошибка при остановке мониторинга файлов")
+                    show_error("Ошибка при остановке мониторинга файлов")
+            else:
+                logger.info("Мониторинг файлов не запущен")
+        except Exception as e:
+            logger.exception(f"Ошибка при остановке мониторинга файлов:\n{traceback.format_exc()}")
+            show_error(f"Ошибка при остановке мониторинга файлов:\n{traceback.format_exc()}")
+
+    def synchronization(self, icon, menu_item):
+        """Синхронизация данных (заглушка)"""
+        try:
+            logger.info("Выполнение синхронизации данных...")
+            # Заглушка - в будущем здесь будет реализована логика синхронизации
+            logger.debug("Синхронизация данных завершена")
+        except Exception as e:
+            logger.exception(f"Ошибка при синхронизации данных:\n{traceback.format_exc()}")
+            show_error(f"Ошибка при синхронизации данных:\n{traceback.format_exc()}")
 
     def settings_action(self, icon, menu_item):
         """Открывает окно настроек."""
@@ -129,7 +188,13 @@ class GeoOfficeSyncService:
     def exit_action(self, icon, menu_item):
         try:
             logger.info("Выход из приложения...")
-            # self._stop_event.set()
+            self._stop_event.set()
+            
+            # Останавливаем мониторинг файлов при выходе
+            if self.is_running:
+                logger.info("Остановка мониторинга файлов перед выходом...")
+                self.file_monitor_service.stop_monitoring()
+            
             self.icon.stop()
         except Exception as e:
             logger.exception(f"Ошибка при выходе из приложения:\n{traceback.format_exc()}")
@@ -142,6 +207,7 @@ class GeoOfficeSyncService:
                 self.icon.run_detached()
             else:
                 self.icon.run()
+            self.start_action(None, None)
         except Exception as e:
             error = f"Ошибка при запуске приложения:\n{traceback.format_exc()}"
             logger.exception(error)

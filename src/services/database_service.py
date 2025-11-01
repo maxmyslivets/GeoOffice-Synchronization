@@ -42,9 +42,9 @@ class DatabaseService:
 
     @log_exception
     @db_session
-    def create_project(self, name: str, path: str, uid: str, number: str = '', customer: str = '',
-                       chief_engineer: str = '', chief_architect: str = '', head_of_the_sanitary: str = '',
-                       status: str = '', address: str = '') -> Any:
+    def create_project(self, name: str, path: str, uid: str, number: str = None, customer: str = None,
+                       chief_engineer: str = None, chief_architect: str = None, head_of_the_sanitary: str = None,
+                       address: str = None) -> Any:
         """
         Создание нового проекта.
         :param name: Название проекта
@@ -63,8 +63,6 @@ class DatabaseService:
         :type chief_architect: str
         :param head_of_the_sanitary: Начальник санитарно-технического отдела
         :type head_of_the_sanitary: str
-        :param status: Статус проекта
-        :type status: str
         :param address: Адрес объекта
         :type address: str
         :return: Созданный проект
@@ -78,7 +76,6 @@ class DatabaseService:
             chief_engineer=chief_engineer,
             chief_architect=chief_architect,
             head_of_the_sanitary=head_of_the_sanitary,
-            status=status,
             address=address,
             path=path,
             uid=uid,
