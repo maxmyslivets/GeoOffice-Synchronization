@@ -85,57 +85,9 @@ class DatabaseService:
 
     @log_exception
     @db_session
-    def update_project(self, project_model):
-        project = self.get_project_from_id(project_model.id)
-        project.number = project_model.number
-        project.name = project_model.name
-        project.path = project_model.path
-        project.customer = project_model.customer
-        project.chief_engineer = project_model.chief_engineer
-        project.chief_architect = project_model.chief_architect
-        project.head_of_the_sanitary = project_model.head_of_the_sanitary
-        project.status = project_model.status
-        project.address = project_model.address
-        project.modified_date = datetime.now()
-        return project
-
-    @log_exception
-    @db_session
-    def get_project_from_id(self, project_id: int) -> Any:
-        logger.debug(f"Получение проекта по id: id={project_id}")
-        return self.models.Project[project_id]
-
-    @log_exception
-    @db_session
-    def get_project_from_path(self, path: str | Path) -> Any:
-        logger.debug(f"Получение проекта по пути: path={path}")
-        return self.models.Project.select_by_sql("SELECT * FROM Объекты WHERE path = $path")[0]
-
-    @log_exception
-    @db_session
     def get_all_projects(self) -> list[Any]:
         logger.debug(f"Получение всех проектов")
         return self.models.Project.select()[:]
-
-    @log_exception
-    @db_session
-    def search_project(self, query: str, sorted_from_modified_date: bool = False) -> list[Any]:
-        """
-        Поиск проектов по названию.
-        :param query: Поисковой запрос
-        :param sorted_from_modified_date: Сортировка по времени последнего редактирования
-        :return: Список кортежей
-        """
-        query = query.lower()
-        if sorted_from_modified_date:
-            projects = self.models.Project.select().order_by(desc(self.models.Project.modified_date))[:]
-        else:
-            projects = self.models.Project.select()[:]
-        results = []
-        for project in projects:
-            if query in f"{str(project.number).lower()} {project.name.lower()} {str(project.customer).lower()}":
-                results.append((project.id, project.number, project.name, project.customer))
-        return results
 
     @log_exception
     @db_session
@@ -148,3 +100,69 @@ class DatabaseService:
     def get_settings_project_dir(self) -> str:
         logger.debug(f"Получение пути расположения проектов")
         return self.models.Settings[1].project_dir
+
+    @log_exception
+    @db_session
+    def get_settings_template_project_dir(self) -> str:
+        logger.debug(f"Получение пути расположения шаблона проекта")
+        return self.models.Settings[1].template_project_dir
+
+    @log_exception
+    @db_session
+    def get_projects_from_parent_path(self, parent_rel_path: str | Path) -> list[Any]:
+        """
+        Получает список проектов внутри указанной директории.
+        Указывается директория относительно папки проектов.
+
+        :param parent_rel_path: Путь относительно папки проектов, родительский от файла проекта
+        :return: Список проектов находящихся внутри parent_rel_path
+        """
+        results = []
+        for project in self.get_all_projects():
+            if Path(project.path) == Path(parent_rel_path):
+                results.append(project)
+        return results
+
+    @log_exception
+    @db_session
+    def mark_deleted_project(self, project_id: int) -> None:
+        """
+        Помечает проект, как удаленный
+        :param project_id: Индекс объекта проекта из БД
+        """
+        project = self.models.Project[project_id]
+        project.status = "deleted"
+        project.modified_date = datetime.now()
+
+    @log_exception
+    @db_session
+    def mark_active_project(self, project_id: int) -> None:
+        """
+        Помечает проект, как удаленный
+        :param project_id: Индекс объекта проекта из БД
+        """
+        project = self.models.Project[project_id]
+        project.status = "active"
+        project.modified_date = datetime.now()
+
+    @log_exception
+    @db_session
+    def update_project_path(self, project_id: int, new_rel_path: str | Path) -> None:
+        """
+        Обновляет путь проекта
+        :param project_id: Индекс объекта проекта из БД
+        :param new_rel_path: Новый путь относительно папки проектов
+        """
+        project = self.models.Project[project_id]
+        project.path = str(new_rel_path)
+        project.modified_date = datetime.now()
+
+    @log_exception
+    @db_session
+    def update_project_modified_date(self, project_id: int) -> None:
+        """
+        Обновляет время изменения проекта
+        :param project_id: Индекс объекта проекта из БД
+        """
+        project = self.models.Project[project_id]
+        project.modified_date = datetime.now()

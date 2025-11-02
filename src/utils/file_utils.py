@@ -59,78 +59,6 @@ class FileUtils:
         except Exception as e:
             logger.error(f"Ошибка загрузки файла {filename}: {str(e)}")
             return None
-    
-    @staticmethod
-    @log_exception
-    def ensure_directory(path: str) -> bool:
-        """Создание директории, если она не существует"""
-        logger.debug(f"Проверка/создание директории: {path}")
-        try:
-            Path(path).mkdir(parents=True, exist_ok=True)
-            logger.debug(f"Директория готова: {path}")
-            return True
-        except Exception as e:
-            logger.error(f"Ошибка создания директории {path}: {str(e)}")
-            return False
-    
-    @staticmethod
-    @log_exception
-    def get_file_extension(filename: str) -> str:
-        """Получение расширения файла"""
-        ext = os.path.splitext(filename)[1].lower()
-        logger.debug(f"Получение расширения файла {filename}: {ext}")
-        return ext
-    
-    @staticmethod
-    @log_exception
-    def is_valid_file(filename: str, allowed_extensions: list) -> bool:
-        """Проверка валидности файла по расширению"""
-        ext = FileUtils.get_file_extension(filename)
-        logger.debug(f"Проверка валидности файла {filename} по расширению: {ext in allowed_extensions}")
-        return ext in allowed_extensions
-    
-    @staticmethod
-    @log_exception
-    def file_exists(file_path: str) -> bool:
-        """Проверка существования файла"""
-        exists = os.path.exists(file_path)
-        logger.debug(f"Проверка файла {file_path}: {'существует' if exists else 'не существует'}")
-        return exists
-    
-    @staticmethod
-    @log_exception
-    def get_file_size(file_path: str) -> int:
-        """Получение размера файла в байтах"""
-        try:
-            size = os.path.getsize(file_path)
-            logger.debug(f"Размер файла {file_path}: {size} байт")
-            return size
-        except Exception as e:
-            logger.error(f"Ошибка получения размера файла {file_path}: {str(e)}")
-            return 0
-
-    @staticmethod
-    @log_exception
-    def open_in_explorer(path):
-        """
-        Открывает указанный путь в проводнике/файловом менеджере ОС.
-        :param path: str
-        """
-        if platform.system() == "Windows":
-            subprocess.Popen(f'explorer /select,"{path}"')
-        elif platform.system() == "Darwin":
-            subprocess.Popen(["open", "-R", path])
-        else:
-            subprocess.Popen(["xdg-open", os.path.dirname(path)])
-
-    @staticmethod
-    @log_exception
-    def open_folder(path):
-        """
-        Открывает указанный путь в проводнике/файловом менеджере ОС.
-        :param path: str
-        """
-        subprocess.Popen(f'explorer "{path}"')
 
     @staticmethod
     @log_exception
@@ -200,19 +128,22 @@ class FileUtils:
         return result
 
     @staticmethod
-    def is_valid_dirname(name: str) -> bool:
-        """Проверяет допустимость имени папки (Windows/Linux)."""
-        if not name or name.strip() == "":
-            return False
-
-        # запрещённые символы (Windows)
-        if re.search(r'[<>:"/\\|?*]', name):
-            return False
-
-        # зарезервированные имена Windows
-        reserved = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
-                    *(f"LPT{i}" for i in range(1, 10))}
-        if name.upper() in reserved:
-            return False
-
-        return True
+    @log_exception
+    def get_relative_path(path: str | Path, subpath: str | Path) -> str | None:
+        """
+        Вычисляет относительный путь.
+        :param path: Родительский путь
+        :param subpath: Дочерний путь
+        :return: Относительный путь или None, если subpath не находится в path
+        """
+        try:
+            path = Path(path)
+            subpath = Path(subpath)
+            try:
+                rel_path = subpath.relative_to(path)
+                return str(rel_path)
+            except ValueError:
+                return None
+        except Exception as e:
+            logger.exception(f"Ошибка при вычислении относительного пути для {subpath}: {e}")
+            return None

@@ -9,12 +9,16 @@
 
 from pathlib import Path
 from typing import Optional, Dict, Any
+from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from threading import Event, Thread
+
+from src.utils.file_utils import FileUtils
 from src.utils.logger_config import get_logger, log_exception
 from src.services.database_service import DatabaseService
 from src.utils.project_file_utils import ProjectFileUtils
+from src import PROJECT_FILE_NAME
 
 
 logger = get_logger(__name__)
@@ -37,7 +41,8 @@ class FileMonitorService:
             server_path: Путь к файловому серверу
         """
         self.database_service = database_service
-        self.server_path = Path(server_path)
+        self.project_dir_path = Path(server_path) / self.database_service.get_settings_project_dir()
+        self.template_exc_path = self.project_dir_path / self.database_service.get_settings_template_project_dir()
         
         # Наблюдатель за файловой системой
         self.observer: Optional[Observer] = None
@@ -141,14 +146,11 @@ class FileMonitorService:
             Optional[Path]: Путь для мониторинга или None если не найден
         """
         try:
-            # Получаем путь к папке проектов из базы данных
-            projects_folder = self.server_path / self.database_service.get_settings_project_dir()
-            if projects_folder:
-                return Path(projects_folder)
+            if self.project_dir_path:
+                return self.project_dir_path
             else:
                 logger.error(f"Путь для мониторинга не получен.")
                 return None
-                
         except Exception as e:
             logger.error(f"Ошибка при получении пути для мониторинга: {e}")
             return None
@@ -232,7 +234,7 @@ class FileMonitorService:
             self.is_monitoring = False
 
     @log_exception
-    def handle_project_file_created(self, file_path: Path) -> None:
+    def handle_created(self, file_path: Path) -> None:
         """
         Обработка события создания файла проекта.
         
@@ -240,9 +242,10 @@ class FileMonitorService:
             file_path: Путь к созданному файлу проекта
         """
         try:
-            if ProjectFileUtils.is_project_file(file_path):
-                logger.info(f"Обнаружен новый файл проекта: {file_path}")
-                
+            if FileUtils.get_relative_path(self.template_exc_path, file_path):
+                return
+            if file_path.name == PROJECT_FILE_NAME:
+                logger.info(f"Создан файл проекта: {file_path}")
                 file_text = ProjectFileUtils.read_project_file(file_path)
                 if ProjectFileUtils.is_uid(file_text):
                     uid = file_text
@@ -251,17 +254,39 @@ class FileMonitorService:
                     if uid is None:
                         logger.error(f"UUID не добавлен в файл проекта `{file_path}`")
                         return
-                if self.database_service.get_project_from_uid(uid):
+                project = self.database_service.get_project_from_uid(uid)
+                if project:
+                    new_rel_path = FileUtils.get_relative_path(self.project_dir_path, file_path.parent)
+                    logger.info(f"Файл проекта перемещен: {project.path} -> {new_rel_path}")
+                    self.database_service.update_project_path(project.id, new_rel_path)
+                    self.database_service.mark_active_project(project.id)
                     return
-                project_dir_path = self.server_path / self.database_service.get_settings_project_dir()
-                rel_path = ProjectFileUtils.get_relative_project_path(project_dir_path, file_path)
+                rel_path = FileUtils.get_relative_path(self.project_dir_path, file_path.parent)
                 name = file_path.parent.name
                 self.database_service.create_project(name, rel_path, uid)
         except Exception as e:
             logger.error(f"Ошибка при обработке создания файла проекта {file_path}: {e}")
 
     @log_exception
-    def handle_project_file_moved(self, old_path: Path, new_path: Path) -> None:
+    def handle_modified(self, file_path: Path) -> None:
+        """
+        Обработка события изменения файла в папке проекта.
+
+        Args:
+            file_path: Путь к файлу в папке проекта
+        """
+        try:
+            rel_path = FileUtils.get_relative_path(self.project_dir_path, file_path)
+            projects = self.database_service.get_projects_from_parent_path(rel_path)
+            if projects:
+                for project in projects:
+                    logger.debug(f"Изменен файл в папке проекта: {file_path}")
+                    self.database_service.update_project_modified_date(project.id)
+        except Exception as e:
+            logger.error(f"Ошибка при обработке изменения файла в папке проекта {file_path}: {e}")
+
+    @log_exception
+    def handle_moved(self, old_path: Path, new_path: Path) -> None:
         """
         Обработка события перемещения файла проекта.
         
@@ -270,71 +295,44 @@ class FileMonitorService:
             new_path: Новый путь к файлу проекта
         """
         try:
-            if (ProjectFileUtils.is_project_file(old_path) or 
-                ProjectFileUtils.is_project_file(new_path)):
-                
-                logger.info(f"Файл проекта перемещен: {old_path} -> {new_path}")
-                
-                # Здесь можно добавить логику обработки:
-                # - обновление пути в базе данных
-                # - уведомление об изменении структуры проекта
-                # - проверка целостности данных
-                
-                # Заглушка - в будущем здесь будет реализована логика
-                logger.debug(f"Обработка перемещения файла проекта: {old_path} -> {new_path}")
+            if (FileUtils.get_relative_path(self.template_exc_path, old_path) and
+                FileUtils.get_relative_path(self.template_exc_path, new_path)):
+                return
+            rel_path = FileUtils.get_relative_path(self.project_dir_path, old_path)
+            projects = self.database_service.get_projects_from_parent_path(rel_path)
+            if projects:
+                for project in projects:
+                    new_rel_path = FileUtils.get_relative_path(self.project_dir_path, new_path)
+                    logger.info(f"Файл проекта перемещен: {project.path} -> {new_rel_path}")
+                    self.database_service.update_project_path(project.id, new_rel_path)
             
         except Exception as e:
             logger.error(f"Ошибка при обработке перемещения файла проекта {old_path} -> {new_path}: {e}")
 
     @log_exception
-    def handle_project_file_deleted(self, file_path: Path) -> None:
+    def handle_deleted(self, path: Path) -> None:
         """
         Обработка события удаления файла проекта.
         
         Args:
-            file_path: Путь к удаленному файлу проекта
+            path: Путь к удаленному файлу проекта
         """
         try:
-            if ProjectFileUtils.is_project_file(file_path):
-                logger.info(f"Файл проекта удален: {file_path}")
-                
-                # Здесь можно добавить логику обработки:
-                # - удаление из базы данных
-                # - очистка связанных данных
-                # - уведомление пользователя
-                # - создание резервной копии
-                
-                # Заглушка - в будущем здесь будет реализована логика
-                logger.debug(f"Обработка удаления файла проекта: {file_path}")
-            
+            if FileUtils.get_relative_path(self.template_exc_path, path):
+                return
+            if path.name == PROJECT_FILE_NAME:
+                logger.info(f"Удален файл проекта: {path}")
+                rel_path = FileUtils.get_relative_path(self.project_dir_path, path.parent)
+            else:
+                rel_path = FileUtils.get_relative_path(self.project_dir_path, path)
+            projects = self.database_service.get_projects_from_parent_path(rel_path)
+            if projects:
+                logger.info(f"Удалена директория, содержащая проекты: {path}")
+            for project in projects:
+                logger.info(f"Проект из директории {self.project_dir_path / project.path} помечен как удаленный")
+                self.database_service.mark_deleted_project(project.id)
         except Exception as e:
-            logger.error(f"Ошибка при обработке удаления файла проекта {file_path}: {e}")
-
-    @log_exception
-    def handle_directory_deleted(self, dir_path: Path) -> None:
-        """
-        Обработка события удаления директории.
-        
-        Args:
-            dir_path: Путь к удаленной директории
-        """
-        try:
-            logger.info(f"Директория удалена: {dir_path}")
-            
-            # Проверяем, была ли удалена директория проекта
-            if ProjectFileUtils.is_project_directory(dir_path):
-                logger.warning(f"Удалена директория проекта: {dir_path}")
-                
-                # Здесь можно добавить логику обработки:
-                # - поиск файлов проектов в удаленной директории
-                # - удаление связанных данных из базы
-                # - уведомление об удалении проекта
-                
-                # Заглушка - в будущем здесь будет реализована логика
-                logger.debug(f"Обработка удаления директории проекта: {dir_path}")
-            
-        except Exception as e:
-            logger.error(f"Ошибка при обработке удаления директории {dir_path}: {e}")
+            logger.error(f"Ошибка при обработке удаления файла или папки `{path}`: {e}")
 
 
 class ProjectFileHandler(FileSystemEventHandler):
@@ -358,63 +356,22 @@ class ProjectFileHandler(FileSystemEventHandler):
     @log_exception
     def on_created(self, event):
         """Обработка события создания файла или директории."""
-        try:
-            if event.is_directory:
-                logger.debug(f"Создана директория: {event.src_path}")
-            else:
-                file_path = Path(event.src_path)
-                if ProjectFileUtils.is_project_file(file_path):
-                    self.service.handle_project_file_created(file_path)
-                    
-        except Exception as e:
-            logger.error(f"Ошибка при обработке события создания {event.src_path}: {e}")
+        if not event.is_directory:
+            self.service.handle_created(Path(event.src_path))
 
     @log_exception
     def on_modified(self, event):
         """Обработка события изменения файла."""
-        try:
-            if not event.is_directory:
-                file_path = Path(event.src_path)
-                if ProjectFileUtils.is_project_file(file_path):
-                    logger.debug(f"Изменен файл проекта: {file_path}")
-                    # При изменении файла проекта также вызываем обработчик создания
-                    # для обновления состояния в системе
-                    self.service.handle_project_file_created(file_path)
-                    
-        except Exception as e:
-            logger.error(f"Ошибка при обработке события изменения {event.src_path}: {e}")
+        self.service.handle_modified(Path(event.src_path))
 
     @log_exception
     def on_deleted(self, event):
         """Обработка события удаления файла или директории."""
-        try:
-            if event.is_directory:
-                dir_path = Path(event.src_path)
-                self.service.handle_directory_deleted(dir_path)
-            else:
-                file_path = Path(event.src_path)
-                if ProjectFileUtils.is_project_file(file_path):
-                    self.service.handle_project_file_deleted(file_path)
-                    
-        except Exception as e:
-            logger.error(f"Ошибка при обработке события удаления {event.src_path}: {e}")
+        self.service.handle_deleted(Path(event.src_path))
 
     @log_exception
     def on_moved(self, event):
         """Обработка события перемещения или переименования файла."""
-        try:
-            if not event.is_directory:
-                old_path = Path(event.src_path)
-                new_path = Path(event.dest_path)
-                
-                if (ProjectFileUtils.is_project_file(old_path) or 
-                    ProjectFileUtils.is_project_file(new_path)):
-                    self.service.handle_project_file_moved(old_path, new_path)
-            else:
-                # Для директорий обрабатываем как удаление старой и создание новой
-                old_dir_path = Path(event.src_path)
-                new_dir_path = Path(event.dest_path)
-                logger.debug(f"Директория перемещена: {old_dir_path} -> {new_dir_path}")
-                
-        except Exception as e:
-            logger.error(f"Ошибка при обработке события перемещения {event.src_path} -> {event.dest_path}: {e}")
+        old_path = Path(event.src_path)
+        new_path = Path(event.dest_path)
+        self.service.handle_moved(old_path, new_path)
