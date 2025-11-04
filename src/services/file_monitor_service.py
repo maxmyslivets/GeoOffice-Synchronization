@@ -277,7 +277,7 @@ class FileMonitorService:
         """
         try:
             rel_path = FileUtils.get_relative_path(self.project_dir_path, file_path)
-            projects = self.database_service.get_projects_from_parent_path(rel_path)
+            projects = self.database_service.get_project_from_path(rel_path)
             if projects:
                 for project in projects:
                     logger.debug(f"Изменен файл в папке проекта: {file_path}")
@@ -299,7 +299,7 @@ class FileMonitorService:
                 FileUtils.get_relative_path(self.template_exc_path, new_path)):
                 return
             rel_path = FileUtils.get_relative_path(self.project_dir_path, old_path)
-            projects = self.database_service.get_projects_from_parent_path(rel_path)
+            projects = self.database_service.get_project_from_path(rel_path)
             if projects:
                 for project in projects:
                     new_rel_path = FileUtils.get_relative_path(self.project_dir_path, new_path)
@@ -325,7 +325,7 @@ class FileMonitorService:
                 rel_path = FileUtils.get_relative_path(self.project_dir_path, path.parent)
             else:
                 rel_path = FileUtils.get_relative_path(self.project_dir_path, path)
-            projects = self.database_service.get_projects_from_parent_path(rel_path)
+            projects = self.database_service.get_project_from_path(rel_path)
             if projects:
                 logger.info(f"Удалена директория, содержащая проекты: {path}")
             for project in projects:

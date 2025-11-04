@@ -217,25 +217,28 @@ class SynchronizationService:
             for path, uid in projects_from_fs.items():
                 if ProjectFileUtils.is_uid(uid):
                     file_uids.add(uid)
+
+            print(db_uids)
+            print(file_uids)
             
-            # Обрабатываем UID, которые есть и в БД, и в файлах
-            # FIXME: Проверить и исправить алгоритм обработки
-            common_uids = db_uids & file_uids
-            self._sync_common_uids(common_uids, projects_from_db, projects_from_fs)
-            
-            # Обрабатываем UID, которые есть только в БД
-            # FIXME: Проверить и исправить алгоритм обработки
-            db_only_uids = db_uids - file_uids
-            self._sync_db_only_uids(db_only_uids)
-            
-            # Обрабатываем UID, которые есть только в файлах
-            # FIXME: Проверить и исправить алгоритм обработки
-            file_only_uids = file_uids - db_uids
-            self._sync_file_only_uids(file_only_uids, projects_from_fs)
-            
-            # Обрабатываем файлы без UID
-            # FIXME: Проверить и исправить алгоритм обработки
-            self._sync_files_without_uid(projects_from_fs)
+            # # Обрабатываем UID, которые есть и в БД, и в файлах
+            # # FIXME: Проверить и исправить алгоритм обработки
+            # common_uids = db_uids & file_uids
+            # self._sync_common_uids(common_uids, projects_from_db, projects_from_fs)
+            #
+            # # Обрабатываем UID, которые есть только в БД
+            # # FIXME: Проверить и исправить алгоритм обработки
+            # db_only_uids = db_uids - file_uids
+            # self._sync_db_only_uids(db_only_uids)
+            #
+            # # Обрабатываем UID, которые есть только в файлах
+            # # FIXME: Проверить и исправить алгоритм обработки
+            # file_only_uids = file_uids - db_uids
+            # self._sync_file_only_uids(file_only_uids, projects_from_fs)
+            #
+            # # Обрабатываем файлы без UID
+            # # FIXME: Проверить и исправить алгоритм обработки
+            # self._sync_files_without_uid(projects_from_fs)
             
         except Exception as e:
             logger.error(f"Ошибка при синхронизации проектов: {e}")

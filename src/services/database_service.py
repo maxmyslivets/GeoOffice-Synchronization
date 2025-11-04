@@ -85,6 +85,17 @@ class DatabaseService:
 
     @log_exception
     @db_session
+    def get_project_from_path(self, path: str | Path) -> list[Any]:
+        """
+        Получение списка проектов с совпадающим путем.
+        :param path: Путь относительно папки проектов
+        :return: Список проектов (объекты БД)
+        """
+        logger.debug(f"Получение проекта по пути: path={path}")
+        return self.models.Project.select(lambda p: p.path == path)[:]
+
+    @log_exception
+    @db_session
     def get_all_projects(self) -> list[Any]:
         logger.debug(f"Получение всех проектов")
         return self.models.Project.select()[:]
@@ -106,22 +117,6 @@ class DatabaseService:
     def get_settings_template_project_dir(self) -> str:
         logger.debug(f"Получение пути расположения шаблона проекта")
         return self.models.Settings[1].template_project_dir
-
-    @log_exception
-    @db_session
-    def get_projects_from_parent_path(self, parent_rel_path: str | Path) -> list[Any]:
-        """
-        Получает список проектов внутри указанной директории.
-        Указывается директория относительно папки проектов.
-
-        :param parent_rel_path: Путь относительно папки проектов, родительский от файла проекта
-        :return: Список проектов находящихся внутри parent_rel_path
-        """
-        results = []
-        for project in self.get_all_projects():
-            if Path(project.path) == Path(parent_rel_path):
-                results.append(project)
-        return results
 
     @log_exception
     @db_session
