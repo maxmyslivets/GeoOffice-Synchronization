@@ -68,7 +68,7 @@ class DatabaseService:
         :return: Созданный проект
         :rtype: Any
         """
-
+        logger.debug(f"Добавление проекта в БД: path=`{path}` uid=`{uid}` name=`{name}`")
         project = self.models.Project(
             number=number,
             name=name,
@@ -80,7 +80,7 @@ class DatabaseService:
             path=path,
             uid=uid,
         )
-        logger.debug(f"Создан новый проект: {project}")
+        logger.debug(f"Проект успешно добавлен в БД: path=`{path}` uid=`{uid}` name=`{name}`")
         return project
 
     @log_exception

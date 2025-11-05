@@ -4,6 +4,7 @@
 """
 import json
 import os
+import traceback
 import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -68,12 +69,13 @@ class ProjectFileUtils:
         :return: Строка UUID или None при ошибке
         """
         # Создаем новый UID и записываем в файл
+        logger.debug(f"Добавление UID в файл `{file_path}`")
         uid = str(uuid.uuid4())
         try:
-            with file_path.open("w", encoding="utf-8") as f:
+            with Path(file_path).open("w", encoding="utf-8") as f:
                 f.write(uid)
-            logger.info(f"Записан новый UID `{uid}` в файл проекта: {file_path}")
+            logger.debug(f"Записан новый UID `{uid}` в файл проекта: `{file_path}`")
             return uid
-        except Exception as e:
-            logger.error(f"Ошибка при записи UID в файл {file_path}: {e}")
+        except Exception:
+            logger.error(f"Ошибка при записи UID в файл {file_path}: {traceback.format_exc()}")
             return None

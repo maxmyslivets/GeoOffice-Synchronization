@@ -117,11 +117,9 @@ class SynchronizationService:
             
             # Сканируем файловую систему
             projects_from_fs = self._scan_files_for_projects()
-            logger.debug(f"Найдено проектов в файловой системе: {len(projects_from_fs)}")
             
             # Получаем проекты из базы данных
             projects_from_db = self._get_projects_from_database()
-            logger.debug(f"Найдено проектов в базе данных: {len(projects_from_db)}")
             
             # Выполняем синхронизацию
             self._sync_projects(projects_from_db, projects_from_fs)
@@ -142,8 +140,9 @@ class SynchronizationService:
         Returns:
             Dict[str, str]: Словарь {относительный_путь: uid_из_файла}
         """
+        logger.debug(f"Чтение проектов из файловой системе")
         result = {}
-        
+
         try:
             # Ищем все файлы .geo_office_project рекурсивно
             for project_file in self.projects_root_path.rglob(PROJECT_FILE_NAME):
@@ -162,12 +161,13 @@ class SynchronizationService:
                 
                 if rel_path is not None:
                     result[str(rel_path)] = uid_content
+                    logger.debug(f"\tПроект: path=`{rel_path}` UID=`{uid_content}`")
                     
-            logger.debug(f"Сканирование файлов завершено. Найдено проектов: {len(result)}")
+            logger.debug(f"Чтение проектов завершен. Найдено проектов: {len(result)}")
             return result
             
-        except Exception as e:
-            logger.error(f"Ошибка при сканировании файлов: {e}")
+        except Exception:
+            logger.error(f"Ошибка при чтении проектов из файловой системы: {traceback.format_exc()}")
             return {}
 
     @log_exception
@@ -178,6 +178,7 @@ class SynchronizationService:
         Returns:
             Dict[str, str]: Словарь {относительный_путь: uid}
         """
+        logger.debug(f"Чтение проектов из БД (кроме проектов со статусом `deleted`)")
         result = {}
         
         try:
@@ -186,12 +187,13 @@ class SynchronizationService:
             for project in all_projects:
                 if project.status != "deleted":  # Игнорируем удаленные проекты
                     result[project.path] = project.uid
+                    logger.debug(f"\tПроект: path=`{project.path}` UID=`{project.uid}`")
                     
-            logger.debug(f"Получено проектов из БД: {len(result)}")
+            logger.debug(f"Чтение проектов завершен. Найдено проектов: {len(result)}")
             return result
             
-        except Exception as e:
-            logger.error(f"Ошибка при получении проектов из БД: {e}")
+        except Exception:
+            logger.error(f"Ошибка при чтении проектов из БД: {traceback.format_exc()}")
             return {}
 
     @log_exception
@@ -203,6 +205,7 @@ class SynchronizationService:
             projects_from_db: Проекты из базы данных
             projects_from_fs: Проекты из файловой системы
         """
+        logger.debug(f"Синхронизация объектов")
         try:
             # Собираем все UID из БД и файлов
             db_uids = set()
@@ -217,9 +220,6 @@ class SynchronizationService:
             for path, uid in projects_from_fs.items():
                 if ProjectFileUtils.is_uid(uid):
                     file_uids.add(uid)
-
-            print(db_uids)
-            print(file_uids)
             
             # # Обрабатываем UID, которые есть и в БД, и в файлах
             # # FIXME: Проверить и исправить алгоритм обработки
@@ -235,14 +235,13 @@ class SynchronizationService:
             # # FIXME: Проверить и исправить алгоритм обработки
             # file_only_uids = file_uids - db_uids
             # self._sync_file_only_uids(file_only_uids, projects_from_fs)
-            #
-            # # Обрабатываем файлы без UID
-            # # FIXME: Проверить и исправить алгоритм обработки
-            # self._sync_files_without_uid(projects_from_fs)
+
+            # Обрабатываем файлы без UID
+            # FIXME: Проверить и исправить алгоритм обработки
+            self._sync_files_without_uid(projects_from_fs)
             
-        except Exception as e:
-            logger.error(f"Ошибка при синхронизации проектов: {e}")
-            logger.error(f"Трассировка: {traceback.format_exc()}")
+        except Exception:
+            logger.error(f"Ошибка при синхронизации проектов: {traceback.format_exc()}")
 
     @log_exception
     def _sync_common_uids(self, common_uids: set, projects_from_db: Dict[str, str], 
@@ -345,22 +344,24 @@ class SynchronizationService:
         Args:
             projects_from_fs: Проекты из файловой системы
         """
-        for path, uid in projects_from_fs.items():
+        logger.debug(f"Синхронизация проектов без UID (добавление в БД)")
+        for rel_path, uid in projects_from_fs.items():
             if not ProjectFileUtils.is_uid(uid):
                 try:
+                    absolute_path = self.projects_root_path / rel_path / PROJECT_FILE_NAME
                     # Создаем новый UID и добавляем в файл и БД
-                    uid = ProjectFileUtils.set_uid(path)
+                    uid = ProjectFileUtils.set_uid(absolute_path)
                     
-                    project_name = Path(path).name
+                    project_name = absolute_path.parent.name
                     self.database_service.create_project(
                         name=project_name,
-                        path=path,
+                        path=rel_path,
                         uid=uid
                     )
-                    logger.info(f"Создан новый проект: {path} (UID: {uid})")
+                    logger.debug(f"Добавлен в БД проект: path=`{rel_path}` name=`{project_name}` UID=`{uid}`")
                     
-                except Exception as e:
-                    logger.error(f"Ошибка при создании нового проекта {path}: {e}")
+                except Exception:
+                    logger.error(f"Ошибка при добавлении проекта в БД (path=`{rel_path}`): {traceback.format_exc()}")
                     continue
 
     def is_synchronizing(self) -> bool:
