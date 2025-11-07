@@ -140,7 +140,7 @@ class SynchronizationService:
         Returns:
             Dict[str, str]: Словарь {относительный_путь: uid_из_файла}
         """
-        logger.debug(f"Чтение проектов из файловой системе")
+        logger.debug(f"Чтение проектов из файловой системы")
         result = {}
 
         try:
@@ -221,11 +221,10 @@ class SynchronizationService:
                 if ProjectFileUtils.is_uid(uid):
                     file_uids.add(uid)
             
-            # # Обрабатываем UID, которые есть и в БД, и в файлах
-            # # FIXME: Проверить и исправить алгоритм обработки
-            # common_uids = db_uids & file_uids
-            # self._sync_common_uids(common_uids, projects_from_db, projects_from_fs)
-            #
+            # Обрабатываем UID, которые есть и в БД, и в файлах
+            common_uids = db_uids & file_uids
+            self._sync_common_uids(common_uids, projects_from_db, projects_from_fs)
+
             # # Обрабатываем UID, которые есть только в БД
             # # FIXME: Проверить и исправить алгоритм обработки
             # db_only_uids = db_uids - file_uids
@@ -237,7 +236,6 @@ class SynchronizationService:
             # self._sync_file_only_uids(file_only_uids, projects_from_fs)
 
             # Обрабатываем файлы без UID
-            # FIXME: Проверить и исправить алгоритм обработки
             self._sync_files_without_uid(projects_from_fs)
             
         except Exception:
@@ -250,40 +248,35 @@ class SynchronizationService:
         Синхронизирует UID, которые присутствуют и в БД, и в файлах.
         
         Args:
-            common_uids: Набор общих UID
-            projects_from_db: Проекты из базы данных
-            projects_from_fs: Проекты из файловой системы
+            common_uids: Набор общих UID (ФС + БД). Множество {UID}
+            projects_from_db: Проекты из базы данных. Словарь {path: UID}
+            projects_from_fs: Проекты из файловой системы. Словарь {path: UID}
         """
+        logger.debug(f"Синхронизация проектов с UID (обновление в БД)")
+        i=0
         for uid in common_uids:
             try:
-                # Находим путь в БД и в файлах для этого UID
-                db_path = None
-                file_path = None
-                
+                db_rel_path = None
+                fs_rel_path = None
                 for path, path_uid in projects_from_db.items():
                     if path_uid == uid:
-                        db_path = path
+                        db_rel_path = path
                         break
-                
                 for path, path_uid in projects_from_fs.items():
                     if path_uid == uid:
-                        file_path = path
+                        fs_rel_path = path
                         break
-                
-                if db_path and file_path:
-                    if db_path != file_path:
-                        # Пути не совпадают - обновляем путь в БД
+                if db_rel_path and fs_rel_path:
+                    if db_rel_path != fs_rel_path:
                         project = self.database_service.get_project_from_uid(uid)
                         if project:
-                            self.database_service.update_project_path(project.id, file_path)
-                            logger.info(f"Обновлен путь проекта {project.number} {project.name}: {db_path} -> {file_path}")
-                    # else:
-                    #     # Всё синхронизировано
-                    #     logger.debug(f"Проект {uid} уже синхронизирован")
-                        
-            except Exception as e:
-                logger.error(f"Ошибка при синхронизации UID {uid}: {e}")
+                            self.database_service.update_project_path(project.id, fs_rel_path)
+                            i+=1
+                            logger.info(f"Обновлен путь проекта в БД: {db_rel_path} -> {fs_rel_path}")
+            except Exception:
+                logger.error(f"Ошибка при синхронизации проектов с UID (обновление в БД): {traceback.format_exc()}")
                 continue
+        logger.debug(f"Обновлено в БД проектов: {i}")
 
     @log_exception
     def _sync_db_only_uids(self, db_only_uids: set) -> None:
@@ -345,6 +338,7 @@ class SynchronizationService:
             projects_from_fs: Проекты из файловой системы
         """
         logger.debug(f"Синхронизация проектов без UID (добавление в БД)")
+        i = 0
         for rel_path, uid in projects_from_fs.items():
             if not ProjectFileUtils.is_uid(uid):
                 try:
@@ -358,11 +352,13 @@ class SynchronizationService:
                         path=rel_path,
                         uid=uid
                     )
+                    i+=1
                     logger.debug(f"Добавлен в БД проект: path=`{rel_path}` name=`{project_name}` UID=`{uid}`")
                     
                 except Exception:
                     logger.error(f"Ошибка при добавлении проекта в БД (path=`{rel_path}`): {traceback.format_exc()}")
                     continue
+        logger.debug(f"Добавлено в БД проектов: {i}")
 
     def is_synchronizing(self) -> bool:
         """
