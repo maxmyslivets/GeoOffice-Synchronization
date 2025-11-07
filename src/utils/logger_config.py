@@ -85,7 +85,7 @@ class GeoOfficeLogger:
 
         # Цветной форматтер для консоли
         self.simple_formatter = ColoredFormatter(
-            fmt='%(name)s | %(levelname)-8s | %(funcName)s() | %(message)s'
+            fmt='%(name)s | %(levelname)-8s | %(funcName)s():%(lineno)d | %(message)s'
         )
 
         # Красивый форматтер для пользовательского интерфейса
