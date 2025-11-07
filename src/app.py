@@ -35,20 +35,32 @@ class GeoOfficeSyncService:
         self._stop_event = threading.Event()
 
         # Загружаем сохранённые настройки (если есть)
-        self.settings = Settings(data=None)
-        self._load_settings()
+        try:
+            self.settings = Settings(data=None)
+            self._load_settings()
+        except Exception:
+            show_error(traceback.format_exc())
 
         # Инициализация базы данных
-        self.database_service = DatabaseService(
-            Path(self.settings.paths.file_server) / self.settings.paths.database_path)
-        self.database_service.connection()
+        try:
+            self.database_service = DatabaseService(
+                Path(self.settings.paths.file_server) / self.settings.paths.database_path)
+            self.database_service.connection()
+        except Exception:
+            show_error(traceback.format_exc())
 
         # Инициализация сервиса синхронизации
-        self.synchronization_service = SynchronizationService(self.database_service, self.settings.paths.file_server)
+        try:
+            self.synchronization_service = SynchronizationService(self.database_service, self.settings.paths.file_server)
+        except Exception:
+            show_error(traceback.format_exc())
 
         # Инициализация сервиса мониторинга файлов
-        self.file_monitor_service = FileMonitorService(self.synchronization_service, self.database_service,
-                                                       self.settings.paths.file_server)
+        try:
+            self.file_monitor_service = FileMonitorService(self.synchronization_service, self.database_service,
+                                                           self.settings.paths.file_server)
+        except Exception:
+            show_error(traceback.format_exc())
 
         # Создаем иконку
         self.icon = Icon(
@@ -104,7 +116,7 @@ class GeoOfficeSyncService:
         self.synchronization_service = SynchronizationService(self.database_service, self.settings.paths.file_server)
         
         # Переинициализируем сервис мониторинга файлов с новыми настройками
-        self.file_monitor_service = FileMonitorService(self.database_service, self.settings.paths.file_server)
+        self.file_monitor_service = FileMonitorService(self.synchronization_service, self.database_service, self.settings.paths.file_server)
 
     @log_exception
     def _get_icon(self) -> Image:
