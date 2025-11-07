@@ -304,13 +304,20 @@ class FileMonitorService:
             path: Путь к удаленному файлу проекта
         """
         try:
-            rel_path = FileUtils.get_relative_path(self.project_dir_path, path)
-            projects = self.database_service.get_projects_from_path(rel_path)
-            if projects:
-                for project in projects:
-                    logger.debug(f"Обработка события удаления: `{path}`")
-                    self.database_service.mark_deleted_project(project.id)
-                # self.synchronization_service.synchronize()
+            if FileUtils.get_relative_path(self.template_exc_path, path):
+                return
+            if path.name == PROJECT_FILE_NAME:
+                logger.debug(f"Обработка события удаления: `{path}`")
+                self.synchronization_service.synchronize()
+            else:
+                # если внутри директории есть папки проектов
+                # либо сама директория является папкой проекта
+                rel_path = FileUtils.get_relative_path(self.project_dir_path, path)
+                for project in self.database_service.get_all_projects():
+                    if rel_path in project.path:
+                        logger.debug(f"Обработка события удаления: `{path}`")
+                        self.synchronization_service.synchronize()
+                        break
         except Exception:
             logger.error(f"Ошибка при обработке удаления файла или папки `{path}`: {traceback.format_exc()}")
 
