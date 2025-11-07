@@ -1,3 +1,4 @@
+import traceback
 from pathlib import Path
 from typing import Any
 from datetime import datetime
@@ -30,7 +31,7 @@ class DatabaseService:
     @log_exception
     @db_session
     def connection(self) -> None:
-        logger.info(f"Инициализация базы данных: {self._path}")
+        logger.debug(f"Инициализация базы данных: {self._path}")
         self.db = PonyDatabase()
         self.db.bind(provider='sqlite', filename=str(self._path))
         # Инициализация моделей
@@ -85,14 +86,18 @@ class DatabaseService:
 
     @log_exception
     @db_session
-    def get_project_from_path(self, path: str | Path) -> list[Any]:
+    def get_projects_from_path(self, path: str | Path) -> list[Any] | None:
         """
         Получение списка проектов с совпадающим путем.
         :param path: Путь относительно папки проектов
         :return: Список проектов (объекты БД)
         """
-        logger.debug(f"Получение проекта по пути: path={path}")
-        return self.models.Project.select(lambda p: p.path == path)[:]
+        logger.debug(f"Получение списка проектов по пути: path={path}")
+        try:
+            path = str(path)
+            return self.models.Project.select_by_sql("SELECT * FROM Объекты WHERE path = $path")[:]
+        except Exception:
+            logger.error(f"Ошибка получения списка проектов по пути path=`{path}`: {traceback.format_exc()}")
 
     @log_exception
     @db_session
@@ -160,4 +165,16 @@ class DatabaseService:
         :param project_id: Индекс объекта проекта из БД
         """
         project = self.models.Project[project_id]
+        project.modified_date = datetime.now()
+
+    @log_exception
+    @db_session
+    def update_project_name(self, project_id: int, name: str) -> None:
+        """
+        Обновляет название проекта
+        :param project_id: Индекс объекта проекта из БД
+        :param name: Название проекта
+        """
+        project = self.models.Project[project_id]
+        project.name = name
         project.modified_date = datetime.now()

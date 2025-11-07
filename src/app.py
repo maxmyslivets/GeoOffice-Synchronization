@@ -43,11 +43,12 @@ class GeoOfficeSyncService:
             Path(self.settings.paths.file_server) / self.settings.paths.database_path)
         self.database_service.connection()
 
-        # Инициализация сервиса мониторинга файлов
-        self.file_monitor_service = FileMonitorService(self.database_service, self.settings.paths.file_server)
-
         # Инициализация сервиса синхронизации
         self.synchronization_service = SynchronizationService(self.database_service, self.settings.paths.file_server)
+
+        # Инициализация сервиса мониторинга файлов
+        self.file_monitor_service = FileMonitorService(self.synchronization_service, self.database_service,
+                                                       self.settings.paths.file_server)
 
         # Создаем иконку
         self.icon = Icon(
@@ -176,7 +177,7 @@ class GeoOfficeSyncService:
     def synchronization(self, icon, menu_item):
         """Запускает синхронизацию данных между БД и файловой системой"""
         try:
-            self.synchronization_service.start_synchronization()
+            self.synchronization_service.synchronize()
         except Exception as e:
             logger.exception(f"Ошибка при синхронизации данных:\n{traceback.format_exc()}")
             show_error(f"Ошибка при синхронизации данных:\n{traceback.format_exc()}")
@@ -217,11 +218,11 @@ class GeoOfficeSyncService:
                 self.icon.run()
 
             # Выполнение синхронизации после простоя
-            # self.synchronization(None, None)
-
+            self.synchronization(None, None)
+            # Запуск мониторинга с синхронизацией
             self.start_action(None, None)
 
         except Exception as e:
             error = f"Ошибка при запуске приложения:\n{traceback.format_exc()}"
-            logger.exception(error)
+            logger.error(error)
             show_error(error)

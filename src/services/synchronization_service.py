@@ -4,7 +4,8 @@
 Обеспечивает синхронизацию между базой данных и файловой системой,
 отслеживая изменения в проектах и поддерживая консистентность данных.
 """
-
+import itertools
+import queue
 import threading
 import traceback
 import uuid
@@ -41,44 +42,57 @@ class SynchronizationService:
         """
         self.database_service = database_service
         self.server_path = Path(server_path)
-        self._sync_thread: Optional[threading.Thread] = None
+        
+        # Очередь задач синхронизации
+        self._sync_queue: queue.Queue = queue.Queue()
+        self._worker_thread: Optional[threading.Thread] = None
+        self._is_worker_running = False
         self._is_synchronizing = False
         
         # Пути к папкам проектов и шаблонов
         self.projects_root_path = self.server_path / self.database_service.get_settings_project_dir()
         self.template_exc_path = self.projects_root_path / self.database_service.get_settings_template_project_dir()
         
-        logger.info(f"Инициализирован сервис синхронизации для пути: {self.projects_root_path}")
-
-    @log_exception
-    def start_synchronization(self) -> bool:
-        """
-        Запускает процесс синхронизации в фоновом потоке.
+        # Запускаем worker thread для обработки очереди
+        self._start_worker()
         
-        Returns:
-            bool: True если синхронизация успешно запущена, False иначе
+        logger.info(f"Инициализирован сервис синхронизации для пути: `{self.projects_root_path}`")
+
+    def _start_worker(self) -> None:
         """
-        try:
-            if self._is_synchronizing:
-                logger.warning("Синхронизация уже выполняется")
-                return False
-                
-            if not self._validate_paths():
-                return False
-                
-            # Запускаем синхронизацию в отдельном потоке
-            self._sync_thread = threading.Thread(
-                target=self._synchronization_process,
-                name=APP_NAME,
+        Запускает worker thread для обработки очереди задач синхронизации.
+        """
+        if not self._is_worker_running:
+            self._is_worker_running = True
+            self._worker_thread = threading.Thread(
+                target=self._worker_process,
+                name=f"{APP_NAME}_Worker",
                 daemon=True
             )
-            self._sync_thread.start()
+            self._worker_thread.start()
+            logger.debug("Запущен worker thread для обработки очереди синхронизации")
 
-            logger.debug("Запущена синхронизация")
+    @log_exception
+    def synchronize(self) -> bool:
+        """
+        Добавляет задачу синхронизации в очередь для обработки.
+        Returns:
+            bool: True если задача успешно добавлена в очередь, False иначе
+        """
+        try:
+            if not self._validate_paths():
+                return False
+            # Создаем задачу для синхронизации
+            task = {
+                'id': str(uuid.uuid4()),
+                'timestamp': threading.Event()
+            }
+            # Добавляем задачу в очередь
+            self._sync_queue.put(task)
+            logger.debug(f"Задача синхронизации добавлена в очередь (ID=`{task['id']}`)")
             return True
-            
-        except Exception as e:
-            logger.error(f"Ошибка при запуске синхронизации: {e}")
+        except Exception:
+            logger.error(f"Ошибка при добавлении задачи синхронизации в очередь: {traceback.format_exc()}")
             return False
 
     @log_exception
@@ -93,29 +107,56 @@ class SynchronizationService:
             if not self.server_path.exists():
                 logger.error(f"Путь к файловому серверу не существует: {self.server_path}")
                 return False
-                
             if not self.projects_root_path.exists():
                 logger.error(f"Папка проектов не существует: {self.projects_root_path}")
                 return False
-                
-            logger.debug("Валидация путей прошла успешно")
             return True
-            
-        except Exception as e:
-            logger.error(f"Ошибка при валидации путей: {e}")
+        except Exception:
+            logger.error(f"Ошибка при валидации путей: {traceback.format_exc()}")
             return False
 
     @log_exception
-    def _synchronization_process(self) -> None:
+    def _worker_process(self) -> None:
         """
-        Основной процесс синхронизации.
-        Выполняется в отдельном потоке.
+        Worker process для обработки задач синхронизации из очереди.
+        Выполняется в отдельном потоке и обрабатывает задачи последовательно.
         """
+        logger.debug("Worker process запущен")
+        
+        while self._is_worker_running:
+            try:
+                # Ожидаем задачу из очереди
+                task = self._sync_queue.get(timeout=1.0)
+                # Проверяем на sentinel задачу для завершения работы
+                if task is None:
+                    logger.debug("Получена sentinel задача, завершение worker process")
+                    break
+                # Обрабатываем задачу
+                self._process_sync_task(task)
+                # Отмечаем задачу как выполненную
+                self._sync_queue.task_done()
+            except queue.Empty:
+                # Очередь пуста, продолжаем ожидание
+                continue
+            except Exception:
+                logger.error(f"Ошибка в worker process: {traceback.format_exc()}")
+                
+        logger.debug("Worker process завершен")
+
+    @log_exception
+    def _process_sync_task(self, task: Dict[str, Any]) -> None:
+        """
+        Обрабатывает отдельную задачу синхронизации.
+        
+        Args:
+            task: Словарь с данными задачи {'id': str, 'timestamp': Event}
+        """
+        task_id = task['id']
         try:
             self._is_synchronizing = True
-            logger.debug("Начало процесса синхронизации...")
+            logger.debug(f"Начало выполнения задачи синхронизации ID=`{task_id}`")
             
-            # Сканируем файловую систему
+            # Сканируем файловую систему (с фильтрацией по путям если указано)
             projects_from_fs = self._scan_files_for_projects()
             
             # Получаем проекты из базы данных
@@ -124,13 +165,15 @@ class SynchronizationService:
             # Выполняем синхронизацию
             self._sync_projects(projects_from_db, projects_from_fs)
             
-            logger.debug("Синхронизация успешно завершена")
+            logger.debug(f"Задача синхронизации ID=`{task_id}` успешно завершена")
             
-        except Exception as e:
-            logger.error(f"Ошибка в процессе синхронизации: {e}")
-            logger.error(f"Трассировка: {traceback.format_exc()}")
+        except Exception:
+            logger.error(f"Ошибка в задаче синхронизации ID=`{task_id}`: {traceback.format_exc()}")
         finally:
             self._is_synchronizing = False
+            # Устанавливаем событие для уведомления о завершении
+            if 'timestamp' in task and task['timestamp']:
+                task['timestamp'].set()
 
     @log_exception
     def _scan_files_for_projects(self) -> Dict[str, str]:
@@ -141,29 +184,28 @@ class SynchronizationService:
             Dict[str, str]: Словарь {относительный_путь: uid_из_файла}
         """
         logger.debug(f"Чтение проектов из файловой системы")
-        result = {}
 
         try:
             # Ищем все файлы .geo_office_project рекурсивно
+            result = {}
             for project_file in self.projects_root_path.rglob(PROJECT_FILE_NAME):
                 # Пропускаем файлы из папки шаблона
                 if FileUtils.get_relative_path(self.template_exc_path, project_file):
                     continue
-                    
+
                 # Читаем содержимое файла
                 uid_content = ProjectFileUtils.read_project_file(project_file)
                 if uid_content is None:
                     continue
-                    
+
                 # Вычисляем относительный путь к папке проекта
                 project_dir_path = project_file.parent
                 rel_path = FileUtils.get_relative_path(self.projects_root_path, project_dir_path)
-                
+
                 if rel_path is not None:
                     result[str(rel_path)] = uid_content
                     logger.debug(f"\tПроект: path=`{rel_path}` UID=`{uid_content}`")
-                    
-            logger.debug(f"Чтение проектов завершен. Найдено проектов: {len(result)}")
+            logger.debug(f"Чтение проектов ФС завершено. Найдено проектов: {len(result)}")
             return result
             
         except Exception:
@@ -186,10 +228,12 @@ class SynchronizationService:
             
             for project in all_projects:
                 if project.status != "deleted":  # Игнорируем удаленные проекты
+                    if project.path in result:
+                        pass    # FIXME: Что делать с проектами с одинаковыми путями в БД ?
                     result[project.path] = project.uid
                     logger.debug(f"\tПроект: path=`{project.path}` UID=`{project.uid}`")
                     
-            logger.debug(f"Чтение проектов завершен. Найдено проектов: {len(result)}")
+            logger.debug(f"Чтение проектов БД завершено. Найдено проектов: {len(result)}")
             return result
             
         except Exception:
@@ -210,7 +254,7 @@ class SynchronizationService:
             # Собираем все UID из БД и файлов
             db_uids = set()
             file_uids = set()
-            
+
             # UID из БД
             for path, uid in projects_from_db.items():
                 if ProjectFileUtils.is_uid(uid):
@@ -242,7 +286,7 @@ class SynchronizationService:
             logger.error(f"Ошибка при синхронизации проектов: {traceback.format_exc()}")
 
     @log_exception
-    def _sync_common_uids(self, common_uids: set, projects_from_db: Dict[str, str], 
+    def _sync_common_uids(self, common_uids: set, projects_from_db: Dict[str, str],
                          projects_from_fs: Dict[str, str]) -> None:
         """
         Синхронизирует UID, которые присутствуют и в БД, и в файлах.
@@ -271,6 +315,8 @@ class SynchronizationService:
                         project = self.database_service.get_project_from_uid(uid)
                         if project:
                             self.database_service.update_project_path(project.id, fs_rel_path)
+                            if project.name.startswith(self.template_exc_path.name):
+                                self.database_service.update_project_name(project.id, Path(fs_rel_path).name)
                             i+=1
                             logger.info(f"Обновлен путь проекта в БД: {db_rel_path} -> {fs_rel_path}")
             except Exception:
@@ -353,7 +399,7 @@ class SynchronizationService:
                         uid=uid
                     )
                     i+=1
-                    logger.debug(f"Добавлен в БД проект: path=`{rel_path}` name=`{project_name}` UID=`{uid}`")
+                    logger.info(f"Добавлен в БД проект: path=`{rel_path}` name=`{project_name}` UID=`{uid}`")
                     
                 except Exception:
                     logger.error(f"Ошибка при добавлении проекта в БД (path=`{rel_path}`): {traceback.format_exc()}")
@@ -368,3 +414,27 @@ class SynchronizationService:
             bool: True если синхронизация выполняется, False иначе
         """
         return self._is_synchronizing
+
+    def shutdown(self) -> None:
+        """
+        Корректно завершает работу сервиса синхронизации.
+        Останавливает worker thread и очищает очередь.
+        """
+        logger.debug("Завершение работы сервиса синхронизации...")
+        
+        # Останавливаем worker thread
+        self._is_worker_running = False
+        
+        # Добавляем sentinel задачу для принудительного завершения очереди
+        try:
+            self._sync_queue.put_nowait(None)
+        except queue.Full:
+            pass
+            
+        # Ожидаем завершения worker thread
+        if self._worker_thread and self._worker_thread.is_alive():
+            self._worker_thread.join(timeout=60.0)
+            if self._worker_thread.is_alive():
+                logger.warning("Worker thread не завершился в течение 60 секунд")
+        
+        logger.info("Сервис синхронизации корректно завершен")
