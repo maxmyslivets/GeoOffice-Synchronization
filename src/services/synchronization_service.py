@@ -251,6 +251,9 @@ class SynchronizationService:
         """
         logger.debug(f"Синхронизация объектов")
         try:
+            # FIXME: обработка uid в фс и без uid в бд
+            # FIXME: одинаковые пути в бд
+            # FIXME: одинаковые или пустые uid в бд
             # Собираем все UID из БД и файлов
             db_uids = set()
             file_uids = set()
