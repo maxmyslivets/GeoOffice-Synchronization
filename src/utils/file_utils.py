@@ -48,7 +48,7 @@ class FileUtils:
             if os.path.exists(filename):
                 with open(filename, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    logger.info(f"JSON файл загружен: {filename}")
+                    logger.debug(f"JSON файл загружен: {filename}")
                     return data
             else:
                 logger.warning(f"Файл не найден: {filename}")
