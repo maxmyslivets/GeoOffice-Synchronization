@@ -269,11 +269,10 @@ class SynchronizationService:
             common_uids = db_uids & file_uids
             self._sync_common_uids(common_uids, projects_from_db, projects_from_fs)
 
-            # # Обрабатываем UID, которые есть только в БД
-            # # FIXME: Проверить и исправить алгоритм обработки
-            # db_only_uids = db_uids - file_uids
-            # self._sync_db_only_uids(db_only_uids)
-            #
+            # Обрабатываем UID, которые есть только в БД
+            db_only_uids = db_uids - file_uids
+            self._sync_db_only_uids(db_only_uids)
+
             # # Обрабатываем UID, которые есть только в файлах
             # # FIXME: Проверить и исправить алгоритм обработки
             # file_only_uids = file_uids - db_uids
@@ -337,10 +336,9 @@ class SynchronizationService:
                 project = self.database_service.get_project_from_uid(uid)
                 if project:
                     self.database_service.mark_deleted_project(project.id)
-                    logger.info(f"Проект помечен как удаленный (файл не найден): {uid}")
-                    
-            except Exception as e:
-                logger.error(f"Ошибка при обработке UID только в БД {uid}: {e}")
+                    logger.info(f"Изменение статуса проекта (path=`{project.path}`): {project.status} -> `delete`")
+            except Exception:
+                logger.error(f"Ошибка при обработке UID только в БД {uid}: {traceback.format_exc()}")
                 continue
 
     @log_exception
