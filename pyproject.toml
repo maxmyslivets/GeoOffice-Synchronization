@@ -1,0 +1,11 @@
+[project]
+name = "geooffice-synchronization"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "notebook>=7.4.7",
+    "pony>=0.7.19",
+    "pystray>=0.19.5",
+    "watchdog>=6.0.0",
+]
