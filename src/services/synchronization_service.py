@@ -227,11 +227,10 @@ class SynchronizationService:
             all_projects = self.database_service.get_all_projects()
             
             for project in all_projects:
-                if project.status != "deleted":  # Игнорируем удаленные проекты
-                    if project.path in result:
-                        pass    # FIXME: Что делать с проектами с одинаковыми путями в БД ?
-                    result[project.path] = project.uid
-                    logger.debug(f"\tПроект: path=`{project.path}` UID=`{project.uid}`")
+                if project.path in result:
+                    pass
+                result[project.path] = project.uid
+                logger.debug(f"\tПроект: path=`{project.path}` UID=`{project.uid}`")
                     
             logger.debug(f"Чтение проектов БД завершено. Найдено проектов: {len(result)}")
             return result
@@ -251,9 +250,6 @@ class SynchronizationService:
         """
         logger.debug(f"Синхронизация объектов")
         try:
-            # FIXME: обработка uid в фс и без uid в бд
-            # FIXME: одинаковые пути в бд
-            # FIXME: одинаковые или пустые uid в бд
             # Собираем все UID из БД и файлов
             db_uids = set()
             file_uids = set()
@@ -338,7 +334,7 @@ class SynchronizationService:
         for uid in db_only_uids:
             try:
                 project = self.database_service.get_project_from_uid(uid)
-                if project:
+                if project and project.status != "delete":
                     self.database_service.mark_deleted_project(project.id)
                     i += 1
                     logger.info(f"Изменение статуса проекта (path=`{project.path}`): {project.status} -> `delete`")

@@ -109,7 +109,7 @@ class GeoOfficeLogger:
         main_log_file = self.log_dir / f"{self.app_name.lower()}.log"
         file_handler = logging.handlers.RotatingFileHandler(
             main_log_file,
-            maxBytes=10*1024*1024,  # 10 MB
+            maxBytes=20*1024*1024,  # 20 MB
             backupCount=5,
             encoding='utf-8'
         )
@@ -121,7 +121,7 @@ class GeoOfficeLogger:
         error_log_file = self.log_dir / f"{self.app_name.lower()}_errors.log"
         error_handler = logging.handlers.RotatingFileHandler(
             error_log_file,
-            maxBytes=5*1024*1024,  # 5 MB
+            maxBytes=20*1024*1024,  # 20 MB
             backupCount=3,
             encoding='utf-8'
         )

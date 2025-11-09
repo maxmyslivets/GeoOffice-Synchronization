@@ -131,7 +131,7 @@ class DatabaseService:
         :param project_id: Индекс объекта проекта из БД
         """
         project = self.models.Project[project_id]
-        project.status = "deleted"
+        project.status = "delete"
         project.modified_date = datetime.now()
 
     @log_exception

@@ -200,7 +200,7 @@ class GeoOfficeSyncService:
             open_settings_window(
                 server_path=self.settings.paths.file_server,
                 database_path=self.settings.paths.database_path,
-                on_save=self._update_settings
+                on_save=self._update_settings,
             )
         except Exception as e:
             logger.exception("Ошибка при открытии окна настроек")
