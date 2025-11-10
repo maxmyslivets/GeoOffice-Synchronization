@@ -262,14 +262,15 @@ class FileMonitorService:
         Args:
             file_path: Путь к файлу в папке проекта
         """
+        #FIXME: реагирует на некие периодические изменения всех папок рекурсивно внутри всех папок пути мониторинга
         try:
             if FileUtils.get_relative_path(self.template_exc_path, file_path):
                 return
-            rel_path = FileUtils.get_relative_path(self.project_dir_path, file_path)
+            rel_path = FileUtils.get_relative_path(self.project_dir_path, file_path)    #TODO: вычислять вхождение пути проекта в полученный путь
             projects = self.database_service.get_projects_from_path(rel_path)
             if projects:
                 for project in projects:
-                    logger.debug(f"Обработка события изменения: `{file_path}`")
+                    logger.debug(f"Обработка события изменения: `{file_path}`") #FIXME: ловит только если совпадает именно путь до проекта
                     self.database_service.update_project_modified_date(project.id)
         except Exception:
             logger.error(f"Ошибка при обработке изменения файла в папке проекта `{file_path}`: "
